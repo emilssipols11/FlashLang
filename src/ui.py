@@ -1,16 +1,13 @@
-# src/ui.py
-
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QStackedWidget,
     QLabel, QLineEdit, QListWidget, QHBoxLayout,
-    QComboBox, QListWidgetItem, QMessageBox, QTextEdit
+    QComboBox, QListWidgetItem, QMessageBox
 )
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPixmap
+from PySide6.QtWidgets import QDialog
 from .translation_service import TranslationService
 from .data_handler import DataHandler
 import random
-import pandas as pd
 import os
 
 class FlashcardApp(QWidget):
@@ -21,6 +18,7 @@ class FlashcardApp(QWidget):
         self.translation_service = TranslationService()
         self.data_handler = DataHandler()
         self.current_words = []  # Store words before saving to file
+        self.all_words = []  # Loaded words for practice
 
         self.init_ui()
 
@@ -114,6 +112,9 @@ class FlashcardApp(QWidget):
         fetch_translation_button.clicked.connect(self.fetch_translation)
         word_input_layout.addWidget(fetch_translation_button)
 
+        # Bind Enter key to submit translation
+        self.word_input.returnPressed.connect(self.fetch_translation)
+
         layout.addLayout(word_input_layout)
 
         # Editable field to show and edit the translation
@@ -125,6 +126,9 @@ class FlashcardApp(QWidget):
         add_word_button = QPushButton("Add Word")
         add_word_button.clicked.connect(self.add_word)
         layout.addWidget(add_word_button)
+
+        # Bind Enter key to add word
+        self.translation_edit.returnPressed.connect(self.add_word)
 
         # List to display words and their translations
         self.word_list_widget = QListWidget()
@@ -254,16 +258,25 @@ class FlashcardApp(QWidget):
         if selected_items:
             selected_files = [item.text() for item in selected_items]
             # Load words from selected files
-            self.practice_words = self.data_handler.load_words(selected_files)
-            if not self.practice_words:
+            self.all_words = self.data_handler.load_words(selected_files)
+            if not self.all_words:
                 QMessageBox.warning(self, "No Words", "Selected files contain no words.")
                 return
-            self.practice_index = 0
-            random.shuffle(self.practice_words)
-            # Show the first flashcard
+            # Start practice
             self.show_flashcard()
         else:
             QMessageBox.warning(self, "No Files Selected", "Please select at least one file to practice.")
+
+    def select_word_based_on_quotient(self):
+        # Calculate total weight
+        total_weight = sum(word['quotient'] for word in self.all_words)
+        if total_weight == 0:
+            total_weight = 1.0  # To avoid division by zero
+        weights = [word['quotient'] / total_weight for word in self.all_words]
+
+        # Use random.choices to select one word
+        selected_word = random.choices(self.all_words, weights=weights, k=1)[0]
+        return selected_word
 
     def create_flashcard_widget(self):
         widget = QWidget()
@@ -308,78 +321,83 @@ class FlashcardApp(QWidget):
         self.skip_button.clicked.connect(self.skip_flashcard)
         buttons_layout.addWidget(self.skip_button)
 
+        # Bind Enter key to submit translation
+        self.translation_input.returnPressed.connect(self.submit_translation)
+
         layout.addLayout(buttons_layout)
 
         return widget
 
     def show_flashcard(self):
-        if self.practice_index < len(self.practice_words):
-            word_entry = self.practice_words[self.practice_index]
-            source_lang = word_entry['source_language']
-            target_lang = word_entry['target_language']
-
-            # Update languages label
-            self.languages_label.setText(f"{source_lang} → {target_lang}")
-
-            # Display the word prominently
-            self.flashcard_label.setText(f"{word_entry['original']}")
-            self.translation_input.clear()
-            self.feedback_label.hide()
-            self.stacked_widget.setCurrentWidget(self.flashcard_widget)
-        else:
-            QMessageBox.information(self, "Practice Complete", "You have completed all flashcards.")
+        if not self.all_words:
+            QMessageBox.information(self, "No Words Available", "There are no words to practice.")
             self.show_main_menu()
+            return
+
+        # Select a word based on quotient values
+        word_entry = self.select_word_based_on_quotient()
+        self.current_word = word_entry
+
+        source_lang = word_entry['source_language']
+        target_lang = word_entry['target_language']
+
+        # Update languages label
+        self.languages_label.setText(f"{source_lang} → {target_lang}")
+
+        # Display the word prominently
+        self.flashcard_label.setText(f"{word_entry['original']}")
+        self.translation_input.clear()
+        self.feedback_label.hide()
+        self.stacked_widget.setCurrentWidget(self.flashcard_widget)
 
     def submit_translation(self):
         user_translation = self.translation_input.text().strip()
         if user_translation:
-            word_entry = self.practice_words[self.practice_index]
+            word_entry = self.current_word
             correct_translation = word_entry['translation']
             if user_translation.lower() == correct_translation.lower():
                 # Update quotient, decrease if correct
-                word_entry['quotient'] *= 0.9
+                word_entry['quotient'] *= 0.5
                 # Save updated quotient to CSV
                 self.data_handler.update_word(word_entry)
                 # Display green checkmark
-                self.show_feedback(True)
+                self.show_feedback(correct=True)
             else:
                 # Update quotient, increase if incorrect
-                word_entry['quotient'] *= 1.1
+                word_entry['quotient'] *= 2
                 # Save updated quotient to CSV
                 self.data_handler.update_word(word_entry)
-                QMessageBox.warning(self, "Incorrect", f"The correct translation is: {correct_translation}")
-                self.practice_index += 1
-                self.show_flashcard()
+                # Display correct translation
+                self.show_feedback(correct=False, correct_translation=correct_translation)
         else:
             QMessageBox.warning(self, "Input Error", "Please enter your translation.")
 
     def skip_flashcard(self):
-        word_entry = self.practice_words[self.practice_index]
+        word_entry = self.current_word
         # Update quotient, increase if skipped (treated as incorrect)
-        word_entry['quotient'] *= 1.1
+        word_entry['quotient'] *= 2
         # Save updated quotient to CSV
         self.data_handler.update_word(word_entry)
-        self.practice_index += 1
-        self.show_flashcard()
+        # Display the correct translation
+        self.show_feedback(correct=False, correct_translation=word_entry['translation'])
 
     def exit_practice(self):
         # Return to main menu
         self.show_main_menu()
 
-    def show_feedback(self, correct):
+    def show_feedback(self, correct, correct_translation=None):
         if correct:
             # Display green checkmark
-            self.feedback_label.setText("✔")  # Unicode checkmark
+            self.feedback_label.setText("✔")
             self.feedback_label.setStyleSheet("font-size: 48px; color: green;")
         else:
-            # Display red cross
-            self.feedback_label.setText("✖")
-            self.feedback_label.setStyleSheet("font-size: 48px; color: red;")
+            # Display red cross and correct translation
+            self.feedback_label.setText(f"✖ Correct: {correct_translation}")
+            self.feedback_label.setStyleSheet("font-size: 24px; color: red;")
         self.feedback_label.show()
         # Hide feedback after 1 second
         QTimer.singleShot(1000, self.hide_feedback)
 
     def hide_feedback(self):
         self.feedback_label.hide()
-        self.practice_index += 1
         self.show_flashcard()

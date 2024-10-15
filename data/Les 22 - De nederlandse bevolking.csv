@@ -1,0 +1,46 @@
+original,translation,quotient,source_language,target_language
+bevolking,population,0.5,Dutch,English
+hangt ervan af,depends on it,1.0,Dutch,English
+ervan,thereof,1.0,Dutch,English
+bekijkt,is viewing,1.0,Dutch,English
+inwoners,inhabitants,0.9,Dutch,English
+dichte,dense,0.45,Dutch,English
+gemiddeld,average,0.45,Dutch,English
+figuur,figure,0.405,Dutch,English
+nogal,quite a bit,0.25,Dutch,English
+gegroeid,grown,0.9,Dutch,English
+groei,growth,1.0,Dutch,English
+gaat door,continues,0.55,Dutch,English
+grote,large,0.55,Dutch,English
+oorzaken,Causes,1.0,Dutch,English
+daarvan,thereof,1.8,Dutch,English
+hoger,higher,0.45,Dutch,English
+gemiddelde,average,0.5,Dutch,English
+groeit,growing,2.2,Dutch,English
+doordat,because,1.8,Dutch,English
+leven,live,0.9,Dutch,English
+behoefte aan,need of,1.0,Dutch,English
+vrijheid,freedom,0.5,Dutch,English
+veiligheid,safety,0.45,Dutch,English
+liefde,love,0.9,Dutch,English
+verlaten,left,1.0,Dutch,English
+juist,correct,0.45,Dutch,English
+verklaring,explanation,1.0,Dutch,English
+daarvoor,for that,0.5,Dutch,English
+vertrekken,leave,1.1,Dutch,English
+regels,lines,0.55,Dutch,Englishf
+christelijk,Christian,0.225,Dutch,English
+protestantse,protestant,0.55,Dutch,English
+rechten,rights,1.0,Dutch,English
+godsdienst,religion,1.0,Dutch,English
+katholieken,catholics,0.55,Dutch,English
+joden,jews,1.0,Dutch,English
+staat,stands,1.0,Dutch,English
+godsdiensten,Religion,0.55,Dutch,English
+gelijke,equal,0.45,Dutch,English
+christenen,Christian,0.5,Dutch,English
+afgenomen,Reduced,1.1,Dutch,English
+geloven,believe,4.0,Dutch,English
+op basis van,based on,1.0,Dutch,English
+vaststellen,determine,0.5,Dutch,English
+grootst,Largest,0.5,Dutch,English
