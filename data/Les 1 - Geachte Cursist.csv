@@ -1,0 +1,25 @@
+original,translation,quotient,source_language,target_language
+geslaagd,passed,0.25,Dutch,English
+circa,about,0.125,Dutch,English
+eenvoudige,simple,0.25,Dutch,English
+zich opgegeven,signed up,0.125,Dutch,English
+meedelen,inform,0.125,Dutch,English
+zit in elkaar,is put together,0.5,Dutch,English
+gedrukt,printed,0.125,Dutch,English
+ernaast,Beside,0.0625,Dutch,English
+uitdrukkingen,Phrases,0.25,Dutch,English
+vertaald,translated,0.125,Dutch,English
+bevat,contains,0.25,Dutch,English
+opgenomen,included,0.125,Dutch,English
+daaraan,from it,0.125,Dutch,English
+voorkomen,appear,0.25,Dutch,English
+wat voor,what kind of,0.25,Dutch,English
+gaan om,interact,0.5,Dutch,English
+geregeerd,ruled,0.25,Dutch,English
+bieden,to offer,0.125,Dutch,English
+wijzen,point out,0.25,Dutch,English
+hoofdstuk,chapter,0.125,Dutch,English
+grondig,thorough,0.125,Dutch,English
+voorbereiden,prepare,0.25,Dutch,English
+rekent,count,0.125,Dutch,English
+minstens,at least,0.25,Dutch,English
