@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QStackedWidget,
     QLabel, QLineEdit, QListWidget, QHBoxLayout,
-    QComboBox, QListWidgetItem, QMessageBox
+    QComboBox, QListWidgetItem, QMessageBox, QCheckBox
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QDialog
@@ -68,7 +68,7 @@ class FlashcardApp(QWidget):
         self.stacked_widget.setCurrentWidget(self.input_data_widget)
 
     def show_practice(self):
-        self.update_file_list()
+        self.update_source_list()
         self.stacked_widget.setCurrentWidget(self.practice_widget)
 
     def show_main_menu(self):
@@ -83,9 +83,16 @@ class FlashcardApp(QWidget):
         back_button.clicked.connect(self.show_main_menu)
         layout.addWidget(back_button)
 
-        # Field to enter lesson title / CSV file name
+        # Source Name Input
+        self.source_name_input = QLineEdit()
+        self.source_name_input.setPlaceholderText("Enter source name (e.g., book, website)")
+        layout.addWidget(QLabel("Source Name:"))
+        layout.addWidget(self.source_name_input)
+
+        # Lesson Title Input
         self.lesson_title_input = QLineEdit()
         self.lesson_title_input.setPlaceholderText("Enter lesson title or CSV file name")
+        layout.addWidget(QLabel("Lesson Title:"))
         layout.addWidget(self.lesson_title_input)
 
         # Source language selector
@@ -207,15 +214,23 @@ class FlashcardApp(QWidget):
 
     def save_file(self):
         lesson_title = self.lesson_title_input.text().strip()
+        source_name = self.source_name_input.text().strip()
+
+        if not source_name:
+            QMessageBox.warning(self, "Input Error", "Please enter a source name.")
+            return
+
         if not lesson_title:
             QMessageBox.warning(self, "Input Error", "Please enter a lesson title or CSV file name.")
             return
+
         if not self.current_words:
             QMessageBox.warning(self, "No Words", "No words to save.")
             return
+
         # Save to CSV
-        self.data_handler.save_words(lesson_title, self.current_words)
-        QMessageBox.information(self, "File Saved", f"Words saved to {lesson_title}.csv")
+        self.data_handler.save_words(source_name, lesson_title, self.current_words)
+        QMessageBox.information(self, "File Saved", f"Words saved to {source_name}/{lesson_title}.csv")
         # Clear current words and UI elements
         self.current_words.clear()
         self.word_list_widget.clear()
@@ -224,7 +239,13 @@ class FlashcardApp(QWidget):
         self.translation_edit.clear()
         self.source_language_selector.setEnabled(True)
         self.target_language_selector.setEnabled(True)
+        self.source_name_input.clear()
 
+        # Update practice source selector
+        self.practice_source_selector.clear()
+        self.practice_source_selector.addItems(self.data_handler.get_sources())
+
+    
     def create_practice_widget(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
@@ -234,12 +255,23 @@ class FlashcardApp(QWidget):
         back_button.clicked.connect(self.show_main_menu)
         layout.addWidget(back_button)
 
+        # Source Selector
+        self.practice_source_selector = QComboBox()
+        self.practice_source_selector.addItems(self.data_handler.get_sources())
+        self.practice_source_selector.currentIndexChanged.connect(self.update_file_list)
+        layout.addWidget(QLabel("Select Source:"))
+        layout.addWidget(self.practice_source_selector)
+
         # List of available CSV files
         self.file_list = QListWidget()
         self.update_file_list()
-        layout.addWidget(QLabel("Select files to practice:"))
+        layout.addWidget(QLabel("Select lessons to practice:"))
         layout.addWidget(self.file_list)
         self.file_list.setSelectionMode(QListWidget.MultiSelection)
+
+        # Ultra Mode Checkbox
+        self.ultra_mode_checkbox = QCheckBox("Enable Ultra Mode (Random Direction)")
+        layout.addWidget(self.ultra_mode_checkbox)
 
         # Button to start practice
         self.start_practice_button = QPushButton("Start Practice")
@@ -248,24 +280,39 @@ class FlashcardApp(QWidget):
 
         return widget
 
+    def update_source_list(self):
+        self.practice_source_selector.clear()
+        self.practice_source_selector.addItems(self.data_handler.get_sources())
+        self.update_file_list()
+
     def update_file_list(self):
         self.file_list.clear()
-        files = self.data_handler.get_csv_files()
-        self.file_list.addItems(files)
+        source_name = self.practice_source_selector.currentText()
+        if source_name:
+            files = self.data_handler.get_csv_files(source_name)
+            self.file_list.addItems(files)
 
     def start_practice(self):
         selected_items = self.file_list.selectedItems()
+        source_name = self.practice_source_selector.currentText()
+
+        if not source_name:
+            QMessageBox.warning(self, "No Source Selected", "Please select a source.")
+            return
+
         if selected_items:
             selected_files = [item.text() for item in selected_items]
             # Load words from selected files
-            self.all_words = self.data_handler.load_words(selected_files)
+            self.all_words = self.data_handler.load_words(source_name, selected_files)
             if not self.all_words:
-                QMessageBox.warning(self, "No Words", "Selected files contain no words.")
+                QMessageBox.warning(self, "No Words", "Selected lessons contain no words.")
                 return
+            # Get Ultra Mode setting
+            self.ultra_mode_enabled = self.ultra_mode_checkbox.isChecked()
             # Start practice
             self.show_flashcard()
         else:
-            QMessageBox.warning(self, "No Files Selected", "Please select at least one file to practice.")
+            QMessageBox.warning(self, "No Lessons Selected", "Please select at least one lesson to practice.")
 
     def select_word_based_on_quotient(self):
         # Calculate total weight
@@ -341,11 +388,24 @@ class FlashcardApp(QWidget):
         source_lang = word_entry['source_language']
         target_lang = word_entry['target_language']
 
-        # Update languages label
-        self.languages_label.setText(f"{source_lang} → {target_lang}")
+        # Determine translation direction
+        if self.ultra_mode_enabled:
+            # Randomly decide direction
+            self.current_direction = random.choice(['forward', 'reverse'])
+        else:
+            # Default direction (source to target)
+            self.current_direction = 'forward'
 
-        # Display the word prominently
-        self.flashcard_label.setText(f"{word_entry['original']}")
+        # Update languages label and display word accordingly
+        if self.current_direction == 'forward':
+            # From source to target language
+            self.languages_label.setText(f"{source_lang} → {target_lang}")
+            self.flashcard_label.setText(f"{word_entry['original']}")
+        else:
+            # From target to source language
+            self.languages_label.setText(f"{target_lang} → {source_lang}")
+            self.flashcard_label.setText(f"{word_entry['translation']}")
+
         self.translation_input.clear()
         self.feedback_label.hide()
         self.stacked_widget.setCurrentWidget(self.flashcard_widget)
@@ -354,8 +414,16 @@ class FlashcardApp(QWidget):
         user_translation = self.translation_input.text().strip()
         if user_translation:
             word_entry = self.current_word
-            correct_translation = word_entry['translation']
-            if user_translation.lower() == correct_translation.lower():
+            if self.current_direction == 'forward':
+                # From source to target
+                correct_translation = word_entry['translation']
+                user_answer = user_translation
+            else:
+                # From target to source
+                correct_translation = word_entry['original']
+                user_answer = user_translation
+
+            if user_answer.lower() == correct_translation.lower():
                 # Update quotient, decrease if correct
                 word_entry['quotient'] *= 0.5
                 # Save updated quotient to CSV
@@ -392,7 +460,13 @@ class FlashcardApp(QWidget):
             self.feedback_label.setStyleSheet("font-size: 48px; color: green;")
         else:
             # Display red cross and correct translation
-            self.feedback_label.setText(f"✖ Correct: {correct_translation}")
+            if self.current_direction == 'forward':
+                # From source to target
+                correct_lang = self.current_word['target_language']
+            else:
+                # From target to source
+                correct_lang = self.current_word['source_language']
+            self.feedback_label.setText(f"✖ Correct ({correct_lang}): {correct_translation}")
             self.feedback_label.setStyleSheet("font-size: 24px; color: red;")
         self.feedback_label.show()
         # Hide feedback after 1 second
