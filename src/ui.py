@@ -1,20 +1,26 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QStackedWidget,
     QLabel, QLineEdit, QListWidget, QHBoxLayout,
-    QComboBox, QListWidgetItem, QMessageBox, QCheckBox
+    QComboBox, QListWidgetItem, QMessageBox,
+    QCheckBox, QTextEdit
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QDialog
 from .translation_service import TranslationService
+from .llm_service import LanguageModelService
 from .data_handler import DataHandler
 import random
+import json
 import os
+
+api_token = os.getenv('HUGGINGFACE_API_TOKEN')
 
 class FlashcardApp(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Language Flashcards")
 
+        self.language_model_service = LanguageModelService(model_name='gpt-4o')
         self.translation_service = TranslationService()
         self.data_handler = DataHandler()
         self.current_words = []  # Store words before saving to file
@@ -245,7 +251,6 @@ class FlashcardApp(QWidget):
         self.practice_source_selector.clear()
         self.practice_source_selector.addItems(self.data_handler.get_sources())
 
-    
     def create_practice_widget(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
@@ -273,10 +278,25 @@ class FlashcardApp(QWidget):
         self.ultra_mode_checkbox = QCheckBox("Enable Ultra Mode (Random Direction)")
         layout.addWidget(self.ultra_mode_checkbox)
 
-        # Button to start practice
-        self.start_practice_button = QPushButton("Start Practice")
+        # Buttons for different practice modes
+        buttons_layout = QHBoxLayout()
+
+        # Button to start flashcard practice
+        self.start_practice_button = QPushButton("Flashcard Practice")
         self.start_practice_button.clicked.connect(self.start_practice)
-        layout.addWidget(self.start_practice_button)
+        buttons_layout.addWidget(self.start_practice_button)
+
+        # Button to start gap test
+        self.start_gap_test_button = QPushButton("Gap Test")
+        self.start_gap_test_button.clicked.connect(self.start_gap_test)
+        buttons_layout.addWidget(self.start_gap_test_button)
+
+        # Button to start writing assignment
+        self.start_writing_assignment_button = QPushButton("Writing Assignment")
+        self.start_writing_assignment_button.clicked.connect(self.start_writing_assignment)
+        buttons_layout.addWidget(self.start_writing_assignment_button)
+
+        layout.addLayout(buttons_layout)
 
         return widget
 
@@ -475,3 +495,198 @@ class FlashcardApp(QWidget):
     def hide_feedback(self):
         self.feedback_label.hide()
         self.show_flashcard()
+
+    def start_gap_test(self):
+        selected_items = self.file_list.selectedItems()
+        source_name = self.practice_source_selector.currentText()
+
+        if not source_name:
+            QMessageBox.warning(self, "No Source Selected", "Please select a source.")
+            return
+
+        if selected_items:
+            selected_files = [item.text() for item in selected_items]
+            # Load words from selected files
+            self.all_words = self.data_handler.load_words(source_name, selected_files)
+            if not self.all_words:
+                QMessageBox.warning(self, "No Words", "Selected lessons contain no words.")
+                return
+            # Start gap test
+            self.generate_gap_text()
+        else:
+            QMessageBox.warning(self, "No Lessons Selected", "Please select at least one lesson to practice.")
+
+    def generate_gap_text(self):
+        # Get the list of words from the lesson
+        vocabulary_words = [word['original'] for word in self.all_words]
+        target_language = self.all_words[0]['source_language']
+        prompt = (
+            f"Write a coherent text in {target_language} that includes minimum 5 to maximum 10 of the following words or phrases:\n"
+            f"{', '.join(vocabulary_words)}.\n"
+            f"Replace these words with blanks '____' in the text."
+            f"Return the response in json format, with the key 'gap_text' and the value as your text with the gaps. The key 'words' should contain a list of the words that should be filled in the blanks in the order of the list."
+            f"An example response from you would be: {'{"gap_text": "This is a ____ example.", "words": ["great"]}'}. Make sure it is always in this format"
+            f"Please note that the text should be coherent and make sense. The sentences should be more or less related to each other."
+        )
+
+        try:
+            gap_text = self.language_model_service.generate_text(prompt)
+            print(gap_text)
+            self.display_gap_test(gap_text)
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to generate gap text: {e}")
+
+    def display_gap_test(self, gap_text):
+        gap_text = json.loads(gap_text)
+        # Create a new widget for the gap test
+        self.gap_test_widget = QWidget()
+        layout = QVBoxLayout(self.gap_test_widget)
+
+        # Back button to return to practice menu
+        back_button = QPushButton("Back")
+        back_button.clicked.connect(self.show_practice)
+        layout.addWidget(back_button)
+
+        # Display the gap text
+        self.gap_text_label = QLabel(gap_text.get("gap_text", ""))
+        self.gap_text_label.setWordWrap(True)
+        layout.addWidget(self.gap_text_label)
+
+        # Create input fields for each blank
+        self.gap_inputs = []
+        blanks_count = gap_text.get("gap_text", "").count('____')
+        for i in range(blanks_count):
+            input_field = QLineEdit()
+            input_field.setPlaceholderText(f"Word for blank {i+1}")
+            layout.addWidget(input_field)
+            self.gap_inputs.append(input_field)
+
+        # Submit button
+        submit_button = QPushButton("Submit Answers")
+        submit_button.clicked.connect(lambda: self.submit_gap_test_answers(gap_text.get("words", [])))
+        layout.addWidget(submit_button)
+
+        # Switch to the gap test widget
+        self.stacked_widget.addWidget(self.gap_test_widget)
+        self.stacked_widget.setCurrentWidget(self.gap_test_widget)
+
+    def submit_gap_test_answers(self, correct_words):
+        # Collect user inputs
+        user_answers = [input_field.text().strip() for input_field in self.gap_inputs]
+
+        # Compare and provide feedback
+        feedback_messages = []
+        for i, (user_answer, correct_word) in enumerate(zip(user_answers, correct_words)):
+            if user_answer.lower() == correct_word.lower():
+                feedback_messages.append(f"Blank {i+1}: Correct!")
+            else:
+                feedback_messages.append(f"Blank {i+1}: Incorrect. Correct word is '{correct_word}'.")
+
+        # Display feedback
+        feedback_text = '\n'.join(feedback_messages)
+        QMessageBox.information(self, "Results", feedback_text)
+
+        # Return to the practice menu
+        self.stacked_widget.setCurrentWidget(self.practice_widget)
+
+    def start_writing_assignment(self):
+        selected_items = self.file_list.selectedItems()
+        source_name = self.practice_source_selector.currentText()
+
+        if not source_name:
+            QMessageBox.warning(self, "No Source Selected", "Please select a source.")
+            return
+
+        if selected_items:
+            selected_files = [item.text() for item in selected_items]
+            # Load words from selected files
+            self.all_words = self.data_handler.load_words(source_name, selected_files)
+            if not self.all_words:
+                QMessageBox.warning(self, "No Words", "Selected lessons contain no words.")
+                return
+            # Start writing assignment
+            self.generate_writing_prompt()
+        else:
+            QMessageBox.warning(self, "No Lessons Selected", "Please select at least one lesson to practice.")
+
+    def generate_writing_prompt(self):
+        # Get the list of words from the lesson
+        vocabulary_words = [word['original'] for word in self.all_words]
+        target_language = self.all_words[0]['source_language']
+        prompt = (
+            f"Provide a writing assignment topic in {target_language} that relates to these words:\n"
+            f"{', '.join(vocabulary_words)}.\n"
+            f"The topic should encourage the use of these words."
+        )
+
+        try:
+            writing_prompt = self.language_model_service.generate_text(prompt)
+            self.display_writing_assignment(writing_prompt)
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to generate writing prompt: {e}")
+
+    def display_writing_assignment(self, writing_prompt):
+        # Create a new widget for the writing assignment
+        self.writing_assignment_widget = QWidget()
+        layout = QVBoxLayout(self.writing_assignment_widget)
+
+        # Back button to return to practice menu
+        back_button = QPushButton("Back")
+        back_button.clicked.connect(self.show_practice)
+        layout.addWidget(back_button)
+
+        # Display the writing prompt
+        self.writing_prompt_label = QLabel(writing_prompt)
+        self.writing_prompt_label.setWordWrap(True)
+        layout.addWidget(self.writing_prompt_label)
+
+        # Text area for user's writing
+        self.user_text_edit = QTextEdit()
+        layout.addWidget(self.user_text_edit)
+
+        # Submit button
+        submit_button = QPushButton("Submit Writing")
+        submit_button.clicked.connect(self.submit_writing)
+        layout.addWidget(submit_button)
+
+        # Switch to the writing assignment widget
+        self.stacked_widget.addWidget(self.writing_assignment_widget)
+        self.stacked_widget.setCurrentWidget(self.writing_assignment_widget)
+
+    def submit_writing(self):
+        user_text = self.user_text_edit.toPlainText().strip()
+        if not user_text:
+            QMessageBox.warning(self, "Input Error", "Please write something before submitting.")
+            return
+
+        target_language = self.all_words[0]['source_language']
+        prompt = (
+            f"As a language tutor, please correct the following text in {target_language} and provide feedback:\n\n"
+            f"{user_text}\n\n"
+            f"Identify any mistakes and suggest improvements."
+        )
+
+        try:
+            feedback = self.language_model_service.generate_text(prompt, max_length=500)
+            self.display_writing_feedback(feedback)
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to get feedback: {e}")
+
+    def display_writing_feedback(self, feedback):
+        # Create a new widget for the feedback
+        self.feedback_widget = QWidget()
+        layout = QVBoxLayout(self.feedback_widget)
+
+        # Back button to return to practice menu
+        back_button = QPushButton("Back")
+        back_button.clicked.connect(self.show_practice)
+        layout.addWidget(back_button)
+
+        # Display the feedback
+        feedback_label = QLabel(feedback)
+        feedback_label.setWordWrap(True)
+        layout.addWidget(feedback_label)
+
+        # Switch to the feedback widget
+        self.stacked_widget.addWidget(self.feedback_widget)
+        self.stacked_widget.setCurrentWidget(self.feedback_widget)
